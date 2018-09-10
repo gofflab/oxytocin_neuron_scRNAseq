@@ -1,0 +1,22 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1536595662413.000,
+    "dirty" : true,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "26269DD",
+    "lastKnownWriteTime" : 1536433432,
+    "last_content_update" : 1536600182186,
+    "path" : "/Volumes/Zoidberg/Dropbox/Projects/Active/Dolen_OT/Phase1/analysis/code/OT_neuron_scRNA-Seq_Phase1.Rmd",
+    "project_path" : "code/OT_neuron_scRNA-Seq_Phase1.Rmd",
+    "properties" : {
+        "cursorPosition" : "226,26",
+        "scrollLine" : "202"
+    },
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

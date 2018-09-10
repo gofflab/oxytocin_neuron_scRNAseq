@@ -1,0 +1,22 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1536428512455.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1158883046",
+    "id" : "78F8AB6E",
+    "lastKnownWriteTime" : 1518109619,
+    "last_content_update" : 1518109619,
+    "path" : "~/Dropbox/Projects/Active/Dolen_OT/Phase1/analysis/code/workflow_template.Rmd",
+    "project_path" : "code/workflow_template.Rmd",
+    "properties" : {
+        "cursorPosition" : "162,220",
+        "scrollLine" : "141"
+    },
+    "relative_order" : 3,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

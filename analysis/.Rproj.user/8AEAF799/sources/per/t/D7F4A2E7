@@ -1,0 +1,23 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1536370768075.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "4034399098",
+    "id" : "D7F4A2E7",
+    "lastKnownWriteTime" : 1536433432,
+    "last_content_update" : 1536433432758,
+    "path" : "~/Dropbox/Projects/Active/Dolen_OT/Phase1/analysis/code/OT_neuron_scRNA-Seq_Phase1.Rmd",
+    "project_path" : "code/OT_neuron_scRNA-Seq_Phase1.Rmd",
+    "properties" : {
+        "cursorPosition" : "185,3",
+        "scrollLine" : "173",
+        "tempName" : "Untitled1"
+    },
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

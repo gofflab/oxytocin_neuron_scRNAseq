@@ -1,0 +1,231 @@
+---
+title: "Dolen_OT_neurons_phase1"
+author: "Loyal Goff"
+date: "9/7/2018"
+output: html_document
+---
+
+# Initialize Environment
+```{r init}
+source('code/init.R')
+```
+
+
+# Data Import
+```{r}
+#Gene FPKMs
+fpkms<-read.delim("../data/norms/Dolen_OT_Phase1_norm/genes.fpkm_table",row.names=1)
+gene_ann<-read.delim("../data/norms/Dolen_OT_Phase1_norm/genes.attr_table")
+rownames(gene_ann)<-gene_ann$tracking_id
+
+#Isoform FPKMs
+isoform_fpkms<-read.delim("../data/norms/Dolen_OT_Phase1_norm/isoforms.fpkm_table",row.names=1)
+rownames(isoform_fpkms) <- isoform_fpkms$tracking_id
+
+#Sample Annotation
+sample_ann<-read.delim("../data/norms/Dolen_OT_Phase1_norm/samples.table")
+
+sample_ann$cell_id<-unlist(lapply(as.character(sample_ann$sample_id),function(x){substr(x, 1, nchar(x)-2)}))
+
+master_cell_sheet<-read.delim("metadata/OT01_MasterSheet.txt",stringsAsFactors=T,na.string="NA")
+
+sample_info<-merge(sample_ann,master_cell_sheet,by.x='cell_id',by.y='cell_id',all.x=TRUE,sort=FALSE)
+rownames(sample_info)<-sample_info$cell_id
+colnames(fpkms)<-sample_info$cell_id
+colnames(isoform_fpkms)<-sample_info$cell_id
+#sample_info<-sample_info[,-1]
+
+gene_info<-read.delim("metadata/gencode.vM8.transcripts.filtered.gene_annotation.tab")
+#rownames(gene_info)<-gene_info$gene_id
+keyCols<-c("gene_status",'level','gene_type')
+gene_info[,keyCols]
+
+tmp<-merge(gene_ann,gene_info[,keyCols],by=0,sort=FALSE,all.x=TRUE)
+rownames(tmp)<-tmp$Row.names
+tmp<-tmp[,-1]
+
+gene_ann<-tmp[rownames(fpkms),]
+
+lncRNA_geneIds<-rownames(gene_info)[gene_info$transcript_name == "lincRNA"]
+
+fd<-new("AnnotatedDataFrame",data=gene_ann)
+pd<-new("AnnotatedDataFrame",data=sample_info)
+#rownames(pd)<-make.names(sample_ann$sample_id)
+
+
+dat.relative <- newCellDataSet(as(as.matrix(fpkms), "sparseMatrix"),
+                      phenoData=pd,
+                      featureData=fd)
+
+#PCA to identify crazy outliers
+tmp<-prcomp(t(exprs(dat.relative)),scale=F,center=F)
+
+ggbiplot
+badCells<-c()
+
+
+fpkm_matrix_adj <- relative2abs(dat.relative[,!colnames(dat.relative) %in% badCells], t_estimate=estimate_t(isoform_fpkms[,!colnames(isoform_fpkms) %in% badCells]),cores=detectCores()-1)
+
+# Or alternatively calculate on a model that accounts for labeling
+#fpkm_matrix_adj <- relative2abs(dat.relative, t_estimate=estimate_t(isoform_fpkms),modelStrFormula="~color", cores=6)
+
+dat <- newCellDataSet(as(as.matrix(fpkm_matrix_adj),"sparseMatrix"),
+                      phenoData = pd[!rownames(pd) %in% badCells,],
+                      featureData=fd,
+                      expressionFamily=negbinomial(),
+                      lowerDetectionLimit=1)
+
+```
+
+# QC plots, summary stats, and filtering
+```{r copies_per_cell_qc}
+#Calculate total RNA mass per cell
+pData(dat)$Total_mRNAs <- Matrix::colSums(exprs(dat))
+
+
+#plot(colSums(exprs(dat)),colSums(round(exprs(dat))),pch=20,main="Copies per cell vs Rounded copies per cell")
+#abline(0,1)
+
+hist(pData(dat)$Total_mRNAs,breaks=100,col="darkgreen",main="Distribution of mRNA copies per cell")
+#dat<-dat[,pData(dat)$Total_mRNAs < 10000]
+
+```
+
+```{r QC_and_Filtering}
+# 2000-1000000
+#validcells <- row.names(subset(pData(dat), Total_mRNAs >= 2000 & Total_mRNAs <= 1000000))
+
+#dat.filtered <- dat[,row.names(pData(dat)) %in% validcells]
+
+```
+
+```{r filter_by_num_genes_expressed}
+
+dat<-detectGenes(dat,min_expr=0.1)
+
+hist(pData(dat)$num_genes_expressed,breaks=50,col="steelblue",main="Genes expressed per cell")
+hist(fData(dat)$num_cells_expressed,breaks=50,col="red",main="Cells expressed per gene")
+
+#Expressed genes with expression in >=15 cells
+numCellThreshold<-5 # Maybe lower this
+expressed_genes<-row.names(subset(fData(dat),num_cells_expressed >= numCellThreshold))
+
+hist(fData(dat)$num_cells_expressed,breaks=50,col="red",main="Cells expressed per gene - threshold")
+abline(v=numCellThreshold,lty="dashed")
+
+###
+# High-coverage =  mass >= 5e+04
+####
+massThreshold<-1e+05
+hist(pData(dat)$total_mass,breaks=50,col="darkgreen",main="Distribution of Total mass by cell")
+abline(v=massThreshold,lty="dashed")
+
+#dat.filtered<-dat.filtered[,row.names(subset(pData(dat.filtered),total_mass >= massThreshold))]
+#dat.filtered<-detectGenes(dat.filtered,min_expr=1)
+
+#expressed_genes <- row.names(subset(fData(dat.filtered), 
+#                                    num_cells_expressed >= numCellThreshold))
+                                      #gene_type %in% c("protein_coding", "lincRNA")))
+
+#Cell Summary
+p <- ggplot(pData(dat.filtered))
+p + geom_bar(aes(x=factor(label_fixed),fill=factor(label_fixed)),width=0.5)+facet_grid(Day~label_fixed,scales="free_x") + ggtitle("Valid Cells per condition") + theme_bw() + scale_fill_manual(values=c("red","darkgreen")) 
+
+pdf("cells_passing_filters.pdf")
+p + geom_bar(aes(x=factor(label_fixed),fill=factor(label_fixed)),width=0.5)+facet_grid(Day~label_fixed,scales="free_x") + ggtitle("Valid Cells per condition") + theme_bw() + scale_fill_manual(values=c("red","darkgreen")) 
+dev.off()
+
+```
+
+## Process CDS
+```{r}
+dat<-estimateSizeFactors(dat)
+dat<-estimateDispersions(dat,cores=4)
+
+dat<-detectGenes(dat)
+
+nCellCutoff<-5
+expressed_genes<-rownames(fData(dat))[fData(dat)$num_cells_expressed>=nCellCutoff]
+
+disp_table = dispersionTable(dat)
+disp_table = disp_table %>% mutate(excess_disp =
+  (dispersion_empirical - dispersion_fit) / dispersion_fit) %>%
+    arrange(plyr::desc(excess_disp))
+top_subset_genes = intersect(as.character(head(disp_table, 2500)$gene_id),disp_table$gene_id[disp_table$excess_disp>0])
+
+dat <- setOrderingFilter(dat, top_subset_genes)
+plot_ordering_genes(dat)
+
+
+dat <- preprocessCDS(dat,  method = 'PCA',
+                         norm_method = 'log',
+                         num_dim = 50,
+                         verbose = T)
+
+dat <- reduceDimension(dat, max_components = 2,
+                       reduction_method = 'UMAP',
+                       metric="correlation",
+                       min_dist = 0.2,
+                       n_neighbors = 50,
+                       verbose = T)
+
+dat <- clusterCells(dat,
+                        method = 'densityPeak',
+                        #res = 1e-3,
+                        #louvain_iter = 10,
+                        verbose = T,inspect_rho_sigma = T)
+
+plot_cell_clusters(dat,color="Cluster")
+plot_cell_clusters(dat,color="Total_mRNAs")
+plot_cell_clusters(dat,color="Fluorogold") + scale_color_manual(values=label_colors)
+
+pdf("KChannels.pdf",width=40,height=40)
+plot_cell_clusters(dat,markers=KChannels)
+dev.off()
+    
+```
+
+## Celltype assignment
+```{r}
+pData(dat)$CellType<-"Magnocellular"
+pData(dat)$CellType[pData(dat)$Cluster==1]<-"Parvocellular"
+
+
+plot_cell_clusters(dat,color="Fluorogold") + scale_color_manual(values=label_colors)
+plot_cell_clusters(dat,color="CellType") + scale_color_brewer(palette="Set1")
+
+```
+
+
+# Differential testing
+```{r }
+#By Celltype
+PV_vs_Magno_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+CellType",reducedModelFormulaStr = "~num_genes_expressed",cores=6)
+
+qval_cutoff<-0.1
+PV_vs_Magno_sigGeneIDs<-PV_vs_Magno_res$gene_id[PV_vs_Magno_res$qval<=qval_cutoff]
+length(PV_vs_Magno_sigGeneIDs)
+
+#plot_cell_clusters(dat,markers=lookupGeneName(dat,sample(PV_vs_Magno_sigGeneIDs,12)))
+
+pdf("plots/sigGenes_heatmap_10percent_FDR.pdf",width=10,height=20)
+print(myPHeatmap(dat,PV_vs_Magno_sigGeneIDs,logMode=TRUE))
+dev.off()
+
+plot_cell_clusters(dat,markers=c("Scng","Kcnmb4","Calb1","Nxph4","Scn3b","Cdh6","Cplx1","Gap43","Cartpt","Gabrq","Gpr101","Cacng3"))
+
+# By Cluster
+Cluster_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+Cluster",reducedModelFormulaStr = "~num_genes_expressed",cores=6)
+
+qval_cutoff<-0.1
+Cluster_sigGeneIDs<-Cluster_res$gene_id[Cluster_res$qval<=qval_cutoff]
+length(Cluster_sigGeneIDs)
+
+```
+
+
+# Session Information
+```{r}
+sessionInfo()
+```
+

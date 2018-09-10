@@ -1,0 +1,5 @@
+param	value
+cmd_line	cuffnorm -o /home-3/lgoff2@jhu.edu/work-zfs/seq/Dolen_OT/data/norms/Dolen_OT_Phase1_norm -p 8 --use-sample-sheet /home-3/lgoff2@jhu.edu/work/assemblies/mouse/gencode/M8/filtered/gencode.vM8.transcripts.filtered.gtf /home-3/lgoff2@jhu.edu/work-zfs/seq/Dolen_OT/data/quant_files.txt 
+version	2.2.1
+SVN_revision	4237
+boost_version	104700

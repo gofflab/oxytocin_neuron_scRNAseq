@@ -1,0 +1,22 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1536431626904.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1569289",
+    "id" : "8C5CF257",
+    "lastKnownWriteTime" : 1536370832,
+    "last_content_update" : 1536370832,
+    "path" : "~/Dropbox/Projects/Active/Dolen_OT/Phase1/analysis/code/init_old.R",
+    "project_path" : "code/init_old.R",
+    "properties" : {
+        "cursorPosition" : "7,16",
+        "scrollLine" : "0"
+    },
+    "relative_order" : 4,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
