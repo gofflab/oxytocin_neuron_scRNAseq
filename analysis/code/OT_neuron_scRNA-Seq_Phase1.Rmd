@@ -33,8 +33,8 @@ sample_info<-merge(sample_ann,master_cell_sheet,by.x='cell_id',by.y='cell_id',al
 rownames(sample_info)<-sample_info$cell_id
 colnames(fpkms)<-sample_info$cell_id
 colnames(isoform_fpkms)<-sample_info$cell_id
-#sample_info<-sample_info[,-1]
 
+#sample_info<-sample_info[,-1]
 gene_info<-read.delim("metadata/gencode.vM8.transcripts.filtered.gene_annotation.tab")
 #rownames(gene_info)<-gene_info$gene_id
 keyCols<-c("gene_status",'level','gene_type')
@@ -46,7 +46,7 @@ tmp<-tmp[,-1]
 
 gene_ann<-tmp[rownames(fpkms),]
 
-lncRNA_geneIds<-rownames(gene_info)[gene_info$transcript_name == "lincRNA"]
+#lncRNA_geneIds<-rownames(gene_info)[gene_info$transcript_name == "lincRNA"]
 
 fd<-new("AnnotatedDataFrame",data=gene_ann)
 pd<-new("AnnotatedDataFrame",data=sample_info)
@@ -58,9 +58,9 @@ dat.relative <- newCellDataSet(as(as.matrix(fpkms), "sparseMatrix"),
                       featureData=fd)
 
 #PCA to identify crazy outliers
-tmp<-prcomp(t(exprs(dat.relative)),scale=F,center=F)
+#tmp<-prcomp(t(exprs(dat.relative)),scale=F,center=F)
 
-ggbiplot
+#ggbiplot
 badCells<-c()
 
 
@@ -128,12 +128,12 @@ abline(v=massThreshold,lty="dashed")
                                       #gene_type %in% c("protein_coding", "lincRNA")))
 
 #Cell Summary
-p <- ggplot(pData(dat.filtered))
-p + geom_bar(aes(x=factor(label_fixed),fill=factor(label_fixed)),width=0.5)+facet_grid(Day~label_fixed,scales="free_x") + ggtitle("Valid Cells per condition") + theme_bw() + scale_fill_manual(values=c("red","darkgreen")) 
+#p <- ggplot(pData(dat.filtered))
+#p + geom_bar(aes(x=factor(label_fixed),fill=factor(label_fixed)),width=0.5)+facet_grid(Day~label_fixed,scales="free_x") + ggtitle("Valid Cells per condition") + theme_bw() + scale_fill_manual(values=c("red","darkgreen")) 
 
-pdf("cells_passing_filters.pdf")
-p + geom_bar(aes(x=factor(label_fixed),fill=factor(label_fixed)),width=0.5)+facet_grid(Day~label_fixed,scales="free_x") + ggtitle("Valid Cells per condition") + theme_bw() + scale_fill_manual(values=c("red","darkgreen")) 
-dev.off()
+#pdf("cells_passing_filters.pdf")
+#p + geom_bar(aes(x=factor(label_fixed),fill=factor(label_fixed)),width=0.5)+facet_grid(Day~label_fixed,scales="free_x") + ggtitle("Valid Cells per condition") + theme_bw() + scale_fill_manual(values=c("red","darkgreen")) 
+#dev.off()
 
 ```
 
@@ -193,6 +193,9 @@ pData(dat)$CellType[pData(dat)$Cluster==1]<-"Parvocellular"
 
 plot_cell_clusters(dat,color="Fluorogold") + scale_color_manual(values=label_colors)
 plot_cell_clusters(dat,color="CellType") + scale_color_brewer(palette="Set1")
+plot_cell_clusters(dat,color="sort_date") + scale_color_brewer(palette="Set1")
+plot_cell_clusters(dat,color="source_plate") + scale_color_brewer(palette="Set1")
+plot_cell_clusters(dat,color="Total_mRNAs") 
 
 ```
 
@@ -212,7 +215,9 @@ pdf("plots/sigGenes_heatmap_10percent_FDR.pdf",width=10,height=20)
 print(myPHeatmap(dat,PV_vs_Magno_sigGeneIDs,logMode=TRUE))
 dev.off()
 
-plot_cell_clusters(dat,markers=c("Scng","Kcnmb4","Calb1","Nxph4","Scn3b","Cdh6","Cplx1","Gap43","Cartpt","Gabrq","Gpr101","Cacng3"))
+plot_cell_clusters(dat,markers=c("Scng","Kcnmb4","Calb1","Nxph4","Scn3b","Cdh6","Cplx1","Gap43","Cartpt","Gabrq","Penk","Cacng3"))
+
+plot_cell_clusters(dat,markers=c("Oxt","Avp"))
 
 # By Cluster
 Cluster_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+Cluster",reducedModelFormulaStr = "~num_genes_expressed",cores=6)
