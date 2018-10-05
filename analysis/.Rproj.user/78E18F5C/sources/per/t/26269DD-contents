@@ -217,7 +217,11 @@ dev.off()
 
 plot_cell_clusters(dat,markers=c("Scng","Kcnmb4","Calb1","Nxph4","Scn3b","Cdh6","Cplx1","Gap43","Cartpt","Gabrq","Penk","Cacng3"))
 
-plot_cell_clusters(dat,markers=c("Oxt","Avp"))
+pdf("KChannels.pdf",width=40,height=40)
+plot_cell_clusters(dat,markers=KChannels)
+dev.off()
+
+plot_cell_clusters(dat,markers=c("Sst")) + coord_equal(1)
 
 # By Cluster
 Cluster_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+Cluster",reducedModelFormulaStr = "~num_genes_expressed",cores=6)
@@ -225,6 +229,8 @@ Cluster_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~
 qval_cutoff<-0.1
 Cluster_sigGeneIDs<-Cluster_res$gene_id[Cluster_res$qval<=qval_cutoff]
 length(Cluster_sigGeneIDs)
+
+plot_cell_clusters(dat,markers=sample(lookupGeneName(dat,Cluster_sigGeneIDs),12))
 
 ```
 
