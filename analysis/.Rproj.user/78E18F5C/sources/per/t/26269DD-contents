@@ -91,7 +91,7 @@ dat <- newCellDataSet(as(as.matrix(fpkm_matrix_adj),"sparseMatrix"),
 #PCA 
 indx<-which(rowSums(as.matrix(exprs(dat)))==0)
 tmp<-prcomp(t(exprs(dat[-indx,])),scale=F,center=F)
-ggbiplot(tmp,var.axes=FALSE,circle=TRUE,groups=pData(dat)$Cell_Type_guess,scale=FALSE,alpha=0.7)
+ggbiplot(tmp,var.axes=FALSE,choices=c(1,2),circle=TRUE,groups=pData(dat)$Cell_Type_guess,scale=FALSE,alpha=0.7)
 plot(tmp)
 
 ```
@@ -115,7 +115,7 @@ pData(dat)$Total_mRNAs[order(pData(dat)$Total_mRNAs, decreasing=FALSE)]
 # 10000-1000000
 validcells <- row.names(subset(pData(dat), Total_mRNAs >= 10000 & Total_mRNAs <= 1000000))
 
-dat.filtered <- dat[,row.names(pData(dat)) %in% validcells]
+dat<- dat[,row.names(pData(dat)) %in% validcells]
 
 ```
 
@@ -163,7 +163,7 @@ saveRDS(dat,file="../data/filtered10kOxy.rds")
 ## Process CDS
 ```{r}
 
-dat<-readRDS("../data/filtered10kOxy.rds")
+#dat<-readRDS("../data/filtered10kOxy.rds")
 
 dat<-estimateSizeFactors(dat)
 dat<-estimateDispersions(dat,cores=4)
@@ -176,7 +176,7 @@ disp_table = dispersionTable(dat)
 disp_table = disp_table %>% mutate(excess_disp =
   (dispersion_empirical - dispersion_fit) / dispersion_fit) %>%
     arrange(plyr::desc(excess_disp))
-top_subset_genes = intersect(as.character(head(disp_table, 2500)$gene_id),disp_table$gene_id[disp_table$excess_disp>0])
+top_subset_genes = intersect(as.character(head(disp_table, 1000)$gene_id),disp_table$gene_id[disp_table$excess_disp>0])
 
 dat <- setOrderingFilter(dat, top_subset_genes)
 plot_ordering_genes(dat)
@@ -190,8 +190,8 @@ dat <- preprocessCDS(dat,  method = 'PCA',
 dat <- reduceDimension(dat, max_components = 2,
                        reduction_method = 'UMAP',
                        metric="correlation",
-                       min_dist = 0.2,
-                       n_neighbors = 50,
+                       #min_dist = 0.2,
+                       #n_neighbors = 50,
                        verbose = T,
                        random_state = 100L)
 
@@ -206,6 +206,8 @@ dat <- clusterCells(dat,
 plot_cell_clusters(dat,color="Cluster")
 plot_cell_clusters(dat,color="Total_mRNAs")
 plot_cell_clusters(dat,color="Fluorogold") + scale_color_manual(values=label_colors)
+plot_cell_clusters(dat,markers=c("Avp", "Oxt")) + scale_color_viridis(option="viridis")
+plot_cell_clusters(dat,color="source_plate") + scale_color_brewer(palette="Set1")
 #dev.off()
 
 
@@ -226,24 +228,38 @@ plot_cell_clusters(dat,color="CellType") + scale_color_brewer(palette="Set1")
 plot_cell_clusters(dat,color="sort_date") + scale_color_brewer(palette="Set1")
 plot_cell_clusters(dat,color="source_plate") + scale_color_brewer(palette="Set1")
 plot_cell_clusters(dat,color="Total_mRNAs") 
-dev.off()
+plot_cell_clusters(dat,markers=c("Avp", "Oxt")) + scale_color_viridis(option="viridis")
+#dev.off()
 ```
 
 
 # Differential testing
 ```{r }
 #By Celltype
-PV_vs_Magno_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+Cluster",reducedModelFormulaStr = "~1",cores=4)
+PV_vs_Magno_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+CellType",reducedModelFormulaStr = "~num_genes_expressed",cores=5)
 
 saveRDS(PV_vs_Magno_res, file="PV_vs_Magno_res.rds")
 
 qval_cutoff<-0.0000001
+#qval_cutoff<-0.01
 PV_vs_Magno_sigGeneIDs<-PV_vs_Magno_res$gene_id[PV_vs_Magno_res$qval<=qval_cutoff]
 length(PV_vs_Magno_sigGeneIDs)
 
+pdf("plots/sigGenes_heatmap_q_lt_0.0000001.pdf",width=10,height=10)
+print(myPHeatmap(dat,PV_vs_Magno_sigGeneIDs,logMode=TRUE))
+dev.off()
+
+pdf("plots/top_stringent_DE_genes_Magno_vs_Parvo.pdf",width=20,height=20)
+plot_cell_clusters(dat,markers=lookupGeneName(dat,PV_vs_Magno_sigGeneIDs),ncol=6) + scale_color_viridis(option="viridis")
+dev.off()
+
 #plot_cell_clusters(dat,markers=lookupGeneName(dat,sample(PV_vs_Magno_sigGeneIDs,12)))
 
-pdf("plots/sigGenes_heatmap_10percent_FDR.pdf",width=10,height=70)
+qval_cutoff<-0.01
+PV_vs_Magno_sigGeneIDs<-PV_vs_Magno_res$gene_id[PV_vs_Magno_res$qval<=qval_cutoff]
+length(PV_vs_Magno_sigGeneIDs)
+
+pdf("plots/sigGenes_heatmap_10percent_FDR.pdf",width=10,height=10)
 print(myPHeatmap(dat,PV_vs_Magno_sigGeneIDs,logMode=TRUE))
 dev.off()
 
@@ -265,10 +281,13 @@ dev.off()
 
 plot_cell_clusters(dat,markers=c("Sst")) + coord_equal(1)
 
-# By Cluster
+```
+
+```{r, eval=FALSE}
+# By Cluster (currently this is the same as by CellType unless we revisit cluster k)
 Cluster_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+Cluster",reducedModelFormulaStr = "~num_genes_expressed",cores=6)
 
-qval_cutoff<-0.1
+qval_cutoff<-0.01
 Cluster_sigGeneIDs<-Cluster_res$gene_id[Cluster_res$qval<=qval_cutoff]
 length(Cluster_sigGeneIDs)
 
@@ -276,6 +295,77 @@ plot_cell_clusters(dat,markers=sample(lookupGeneName(dat,Cluster_sigGeneIDs),12)
 
 ```
 
+```{r}
+#hypergeometric test for enrichment of Autism-associated genes in significant DE list
+ASDRiskGenes<-readxl::read_excel("../annotations/ASDRiskGenes.xlsx",sheet="FMRP ASD Risk Genes",skip=1)
+ASDRiskGenes
+ASDRiskGenes<-ASDRiskGenes[ASDRiskGenes$Gene %in% lookupGeneName(dat,expressed_genes),]
+
+SFARIRiskGenes<-readxl::read_excel("../annotations/ASDRiskGenes.xlsx",sheet="SFARI ASD RISK GENES",skip=2)
+SFARIRiskGenes
+SFARIRiskGenes$mouseGeneName<-tools::toTitleCase(stringr::str_to_lower(SFARIRiskGenes$Gene))
+SFARIRiskGenes<-SFARIRiskGenes[SFARIRiskGenes$mouseGeneName %in% lookupGeneName(dat,expressed_genes),]
+
+#ASDRisk
+GeneSetToTest<-ASDRiskGenes$Gene
+k<-length(PV_vs_Magno_sigGeneIDs)
+n<-length(expressed_genes)-length(GeneSetToTest)
+m<-length(GeneSetToTest)
+q<-length(intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)))
+
+phyper(q,m,n,k, lower.tail=FALSE)
+
+#SFARI
+GeneSetToTest<-SFARIRiskGenes$mouseGeneName
+k<-length(PV_vs_Magno_sigGeneIDs)
+n<-length(expressed_genes)-length(GeneSetToTest)
+m<-length(GeneSetToTest)
+q<-length(intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)))
+
+phyper(q,m,n,k, lower.tail=FALSE)
+```
+
+```{r}
+pdf("plots/significantly_DE_ASD_Risk_genes.pdf",width=10,height=10)
+plot_cell_clusters(dat,markers=intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs))) + scale_color_viridis(option="viridis")
+dev.off()
+
+```
+
+
+```{r}
+#Calculate Cell Type Specific mean expression
+fData(dat)$Magno_mean_cpc<-Matrix::rowMeans(exprs(dat)[,pData(dat)$CellType=="Magnocellular"])
+fData(dat)$Parvo_mean_cpc<-Matrix::rowMeans(exprs(dat)[,pData(dat)$CellType=="Parvocellular"])
+fData(dat)$logfc<-log2(fData(dat)$Magno_mean_cpc/fData(dat)$Parvo_mean_cpc)
+
+fData(dat[lookupGeneId(dat,intersect(ASDRiskGenes$Gene,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs))),])$logfc
+
+
+fData(dat)$ASDRiskGene<-fData(dat)$gene_short_name %in% ASDRiskGenes$Gene
+fData(dat)$SFARIRiskGene<-fData(dat)$gene_short_name %in% SFARIRiskGenes$mouseGeneName
+fData(dat)$isSignificant<-fData(dat)$gene_short_name %in% lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)
+
+p<-ggplot(fData(dat[expressed_genes,])) +
+  geom_density(aes(x=logfc),alpha=0,color="black") + 
+  #geom_jitter(aes(x=logfc,y=0.3),height=0.02,color="blue",data=fData(dat)[fData(dat)$ASDRiskGene,]) + 
+  geom_density(aes(x=logfc),color="blue",fill="blue",alpha=0.3,data=fData(dat)[fData(dat)$ASDRiskGene,]) + 
+  #geom_jitter(aes(x=logfc,y=0.1),height=0.02,color="red",data=fData(dat)[fData(dat)$ASDRiskGene & fData(dat)$isSignificant,]) + 
+  geom_density(aes(x=logfc),color="red",fill="red",alpha=0.3,data=fData(dat)[fData(dat)$ASDRiskGene & fData(dat)$isSignificant,]) + 
+  #geom_jitter(aes(x=logfc,y=0.3),height=0.02,color="green",data=fData(dat)[fData(dat)$SFARIRiskGene,]) + 
+  #geom_density(aes(x=logfc),color="green",fill="green",alpha=0.3,data=fData(dat)[fData(dat)$SFARIRiskGene,]) + 
+  #geom_jitter(aes(x=logfc,y=0.1),height=0.02,color="red",data=fData(dat)[fData(dat)$SFARIRiskGene & fData(dat)$isSignificant,]) + 
+  #geom_density(aes(x=logfc),color="orange",fill="orange",alpha=0.3,data=fData(dat)[fData(dat)$SFARIRiskGene & fData(dat)$isSignificant,]) + 
+  xlim(-10,10)+
+  geom_vline(aes(xintercept=0),linetype="dashed") +
+  monocle:::monocle_theme_opts()
+p
+
+pdf("plots/logfc_distribution_by_gene_set.pdf",width=5,height=5)
+p
+dev.off()
+
+```
 
 # Session Information
 ```{r}

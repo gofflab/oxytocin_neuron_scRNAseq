@@ -287,7 +287,7 @@ plot_cell_clusters(dat,markers=c("Sst")) + coord_equal(1)
 # By Cluster (currently this is the same as by CellType unless we revisit cluster k)
 Cluster_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+Cluster",reducedModelFormulaStr = "~num_genes_expressed",cores=6)
 
-qval_cutoff<-0.1
+qval_cutoff<-0.01
 Cluster_sigGeneIDs<-Cluster_res$gene_id[Cluster_res$qval<=qval_cutoff]
 length(Cluster_sigGeneIDs)
 
@@ -366,8 +366,6 @@ p
 dev.off()
 
 ```
-
-
 
 # Session Information
 ```{r}
