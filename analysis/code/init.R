@@ -117,7 +117,7 @@ myPHeatmap<-function(cds,geneset,logMode=TRUE){
   pheatmap(mat=log10(as.matrix(exprs(sub))+1),
             scale="row",
             labels_row=fData(sub)$gene_short_name,
-            annotation_col=pData(sub)[,c("Cell_Type_guess","source_plate","Cluster","Fluorogold","Total_mRNAs","num_genes_expressed")],
+            annotation_col=pData(sub)[,c("CellType","source_plate","Cluster","Fluorogold","Total_mRNAs","num_genes_expressed")],
             labelsCol=FALSE)
 }
 

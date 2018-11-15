@@ -1,13 +1,19 @@
 ---
 title: "Dolen_OT_neurons_phase1"
-author: "Loyal Goff"
-date: "9/7/2018"
+author: "Loyal Goff and Genevieve Stein-O'Brien"
+date: "10/3/2018"
 output: html_document
 ---
 
 # Initialize Environment
 ```{r init}
 source('code/init.R')
+library(reticulate)
+use_condaenv('OT-reticulate')
+set.seed(1234)
+#only need to run when setting up environment, once set just call
+#conda_install('OT-reticulate','umap-learn') 
+#conda_install('OT-reticulate','louvain')
 ```
 
 
@@ -58,12 +64,18 @@ dat.relative <- newCellDataSet(as(as.matrix(fpkms), "sparseMatrix"),
                       featureData=fd)
 
 #PCA to identify crazy outliers
-#tmp<-prcomp(t(exprs(dat.relative)),scale=F,center=F)
+indx<-which(rowSums(as.matrix(exprs(dat.relative)))==0)
+tmp<-prcomp(t(exprs(dat.relative[-indx,])),scale=F,center=F)
+ggbiplot(tmp,var.axes=FALSE,circle=TRUE,groups=pData(dat.relative)$total_mass,scale=FALSE)
+which(tmp$x[,1]<(-500000))
+pData(dat.relative)["OT01_P3_H10",]
+which(tmp$x[,2]<(-4e+05))
+pData(dat.relative)["OT01_P1_G02",]
+
+ggbiplot(tmp,var.axes=FALSE,circle=TRUE,groups=pData(dat.relative)$source_plate,scale=FALSE,alpha=0.3)
 
 #ggbiplot
 badCells<-c()
-
-
 fpkm_matrix_adj <- relative2abs(dat.relative[,!colnames(dat.relative) %in% badCells], t_estimate=estimate_t(isoform_fpkms[,!colnames(isoform_fpkms) %in% badCells]),cores=detectCores()-1)
 
 # Or alternatively calculate on a model that accounts for labeling
@@ -75,6 +87,13 @@ dat <- newCellDataSet(as(as.matrix(fpkm_matrix_adj),"sparseMatrix"),
                       expressionFamily=negbinomial(),
                       lowerDetectionLimit=1)
 
+
+#PCA 
+indx<-which(rowSums(as.matrix(exprs(dat)))==0)
+tmp<-prcomp(t(exprs(dat[-indx,])),scale=F,center=F)
+ggbiplot(tmp,var.axes=FALSE,circle=TRUE,groups=pData(dat)$Cell_Type_guess,scale=FALSE,alpha=0.7)
+plot(tmp)
+
 ```
 
 # QC plots, summary stats, and filtering
@@ -82,20 +101,21 @@ dat <- newCellDataSet(as(as.matrix(fpkm_matrix_adj),"sparseMatrix"),
 #Calculate total RNA mass per cell
 pData(dat)$Total_mRNAs <- Matrix::colSums(exprs(dat))
 
-
 #plot(colSums(exprs(dat)),colSums(round(exprs(dat))),pch=20,main="Copies per cell vs Rounded copies per cell")
 #abline(0,1)
 
 hist(pData(dat)$Total_mRNAs,breaks=100,col="darkgreen",main="Distribution of mRNA copies per cell")
 #dat<-dat[,pData(dat)$Total_mRNAs < 10000]
+pData(dat)$Total_mRNAs[order(pData(dat)$Total_mRNAs, decreasing=FALSE)]
+
 
 ```
 
 ```{r QC_and_Filtering}
-# 2000-1000000
-#validcells <- row.names(subset(pData(dat), Total_mRNAs >= 2000 & Total_mRNAs <= 1000000))
+# 10000-1000000
+validcells <- row.names(subset(pData(dat), Total_mRNAs >= 10000 & Total_mRNAs <= 1000000))
 
-#dat.filtered <- dat[,row.names(pData(dat)) %in% validcells]
+dat.filtered <- dat[,row.names(pData(dat)) %in% validcells]
 
 ```
 
@@ -135,13 +155,18 @@ abline(v=massThreshold,lty="dashed")
 #p + geom_bar(aes(x=factor(label_fixed),fill=factor(label_fixed)),width=0.5)+facet_grid(Day~label_fixed,scales="free_x") + ggtitle("Valid Cells per condition") + theme_bw() + scale_fill_manual(values=c("red","darkgreen")) 
 #dev.off()
 
+
+saveRDS(dat,file="../data/filtered10kOxy.rds")
+
 ```
 
 ## Process CDS
 ```{r}
+
+dat<-readRDS("../data/filtered10kOxy.rds")
+
 dat<-estimateSizeFactors(dat)
 dat<-estimateDispersions(dat,cores=4)
-
 dat<-detectGenes(dat)
 
 nCellCutoff<-5
@@ -167,7 +192,8 @@ dat <- reduceDimension(dat, max_components = 2,
                        metric="correlation",
                        min_dist = 0.2,
                        n_neighbors = 50,
-                       verbose = T)
+                       verbose = T,
+                       random_state = 100L)
 
 dat <- clusterCells(dat,
                         method = 'densityPeak',
@@ -175,11 +201,15 @@ dat <- clusterCells(dat,
                         #louvain_iter = 10,
                         verbose = T,inspect_rho_sigma = T)
 
+
+#pdf("plots/filtered10kClusters_weirdgroupign.pdf",width=10,height=10)
 plot_cell_clusters(dat,color="Cluster")
 plot_cell_clusters(dat,color="Total_mRNAs")
 plot_cell_clusters(dat,color="Fluorogold") + scale_color_manual(values=label_colors)
+#dev.off()
 
-pdf("KChannels.pdf",width=40,height=40)
+
+pdf("plots/KChannels.pdf",width=40,height=40)
 plot_cell_clusters(dat,markers=KChannels)
 dev.off()
     
@@ -190,32 +220,44 @@ dev.off()
 pData(dat)$CellType<-"Magnocellular"
 pData(dat)$CellType[pData(dat)$Cluster==1]<-"Parvocellular"
 
-
+#pdf("plots/filtered10_calledClusters.pdf",width=10,height=10)
 plot_cell_clusters(dat,color="Fluorogold") + scale_color_manual(values=label_colors)
 plot_cell_clusters(dat,color="CellType") + scale_color_brewer(palette="Set1")
 plot_cell_clusters(dat,color="sort_date") + scale_color_brewer(palette="Set1")
 plot_cell_clusters(dat,color="source_plate") + scale_color_brewer(palette="Set1")
 plot_cell_clusters(dat,color="Total_mRNAs") 
-
+dev.off()
 ```
 
 
 # Differential testing
 ```{r }
 #By Celltype
-PV_vs_Magno_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+CellType",reducedModelFormulaStr = "~num_genes_expressed",cores=6)
+PV_vs_Magno_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+Cluster",reducedModelFormulaStr = "~1",cores=4)
 
-qval_cutoff<-0.1
+saveRDS(PV_vs_Magno_res, file="PV_vs_Magno_res.rds")
+
+qval_cutoff<-0.0000001
 PV_vs_Magno_sigGeneIDs<-PV_vs_Magno_res$gene_id[PV_vs_Magno_res$qval<=qval_cutoff]
 length(PV_vs_Magno_sigGeneIDs)
 
 #plot_cell_clusters(dat,markers=lookupGeneName(dat,sample(PV_vs_Magno_sigGeneIDs,12)))
 
-pdf("plots/sigGenes_heatmap_10percent_FDR.pdf",width=10,height=20)
+pdf("plots/sigGenes_heatmap_10percent_FDR.pdf",width=10,height=70)
 print(myPHeatmap(dat,PV_vs_Magno_sigGeneIDs,logMode=TRUE))
 dev.off()
 
+pdf(file="plots/genes4Ale.pdf")
+plot_cell_clusters(dat,markers=c("Reln", "Cartpt", "Calb1", "Oxt"))
+dev.off()
+
+
 plot_cell_clusters(dat,markers=c("Scng","Kcnmb4","Calb1","Nxph4","Scn3b","Cdh6","Cplx1","Gap43","Cartpt","Gabrq","Penk","Cacng3"))
+
+plot_cell_clusters(dat,markers=c("Ndrg2","Aldoc","Apoe","Sparc","Atp1a2","Sparcl1","Dbi","Mt1","Gsn","Mbp","Hbb−bs","Hba−a1","Cnp","Lars2","Serpine2","Cd9"))
+
+plot_cell_clusters(dat,markers=c("C2cd5","Ptprz1","S100a1","Kank1","Gpr37l1","Ppap2b","Gja1","Serpine2","Atp1b2","Fxyd1","Gsn","Cmtm5","Pla2g7","Htra1","Slc1a3","Agt","Ttyh1","Bcan","Mmd2","Lars2","Gm15564","Dbi","Ndrg2","Aldoc","Ntsr2","Atp1a2","Sparcl1","Sepp1","Apoe","Sparc","Plekhb1","Ddr1","Sept4","Sirt2","Josd2","Ptn","Scd2","Gpm6b","Ctss","Mbp","Hbb−bs","Hba−a1","Cnp","Mag","Plp1","Trf","Mal","Cldn11","Mobp","Hba−a2","Cryab","Hbb−bt","Mog","Cd9"))
+plot_cell_clusters(dat,markers=c("Sox5","Car10","C230004F18Rik","Nxph4","Cbln4","Cpne6","Me3","Igsf21","Reln","Brinp1","Scn3b"))
 
 pdf("KChannels.pdf",width=40,height=40)
 plot_cell_clusters(dat,markers=KChannels)
