@@ -14,7 +14,10 @@ set.seed(1234)
 library("AnnotationDbi")
 library("org.Mm.eg.db")
 library("biomaRt")
-#only need to run when setting up environment, once set just call
+library("RColorBrewer")
+library(corrplot)
+library(monocle)
+ #only need to run when setting up environment, once set just call
 #conda_install('OT-reticulate','umap-learn') 
 #conda_install('OT-reticulate','louvain')
 ```
@@ -92,8 +95,6 @@ dat <- newCellDataSet(as(as.matrix(fpkm_matrix_adj),"sparseMatrix"),
 
 
 #PCA 
-indx<-which(rowSums(as.matrix(exprs(dat)))==0)
-tmp<-prcomp(t(exprs(dat[-indx,])),scale=F,center=F)
 ggbiplot(tmp,var.axes=FALSE,choices=c(1,2),circle=TRUE,groups=pData(dat)$Cell_Type_guess,scale=FALSE,alpha=0.7)
 plot(tmp)
 
@@ -159,7 +160,7 @@ abline(v=massThreshold,lty="dashed")
 #dev.off()
 
 
-saveRDS(dat,file="../data/filtered10kOxy.rds")
+#saveRDS(dat,file="../data/filtered10kOxy.rds")
 
 ```
 
@@ -182,7 +183,6 @@ top_subset_genes = intersect(as.character(head(disp_table, 1000)$gene_id),disp_t
 dat <- setOrderingFilter(dat, top_subset_genes)
 plot_ordering_genes(dat)
 
-
 dat <- preprocessCDS(dat,  method = 'PCA',
                          norm_method = 'log',
                          num_dim = 50,
@@ -202,8 +202,14 @@ dat <- clusterCells(dat,
                         #louvain_iter = 10,
                         verbose = T,inspect_rho_sigma = T)
 
+#saveRDS(dat,file="../data/filtered10kOxy.rds")
+dat<-readRDS(file="../data/filtered10kOxy.rds")
 
-saveRDS(dat,file="../data/filtered10kOxy.rds")
+#exprs()<-row.names(subset(fData(dat),num_cells_expressed >= numCellThreshold))
+
+summary(exprs(dat)[which(fData(dat)$gene_short_name=="Cnr1"),])
+plot(density(exprs(dat)[which(fData(dat)$gene_short_name=="Reln"),]))
+indx<-sapply(c("Cnr1","Reln","Calb1"), function(x) which(fData(dat)$gene_short_name==x))
 
 
 #pdf("plots/filtered10kClusters_weirdgroupign.pdf",width=10,height=10)
@@ -226,70 +232,147 @@ dev.off()
 pData(dat)$CellType<-"Magnocellular"
 pData(dat)$CellType[pData(dat)$Cluster==1]<-"Parvocellular"
 
-#pdf("plots/filtered10_calledClusters.pdf",width=10,height=10)
+PMcolors<-c("orangered","darkcyan")
+
+pdf("../plots/filtered10_calledClusters.pdf",width=10,height=10)
 plot_cell_clusters(dat,color="Fluorogold") + scale_color_manual(values=label_colors)
-plot_cell_clusters(dat,color="CellType") + scale_color_brewer(palette="Set1")
+plot_cell_clusters(dat,color="CellType") + scale_color_manual(values=PMcolors)
 plot_cell_clusters(dat,color="sort_date") + scale_color_brewer(palette="Set1")
 plot_cell_clusters(dat,color="source_plate") + scale_color_brewer(palette="Set1")
 plot_cell_clusters(dat,color="Total_mRNAs") 
 plot_cell_clusters(dat,markers=c("Avp", "Oxt")) + scale_color_viridis(option="viridis")
-#dev.off()
+dev.off()
 ```
+
+
+## sillotte score for kmeans clustering 
+
+```{r }
+library(factoextra)
+dat<-readRDS("../data/filtered10kOxy.rds")
+pData(dat)$CellType<-"Magnocellular"
+pData(dat)$CellType[pData(dat)$Cluster==1]<-"Parvocellular"
+str(pData(dat))
+
+pData(dat)$UMAP1<-reducedDimA(dat)[1,]
+pData(dat)$UMAP2<-reducedDimA(dat)[2,]
+
+pdf("../plots/silhouetteplot.pdf")
+fviz_nbclust(t(reducedDimA(dat)), kmeans, method='silhouette')
+dev.off()
+
+
+```
+
+
+
+
 
 
 # Differential testing
 ```{r }
-
-
 
 #By Celltype
 PV_vs_Magno_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+CellType",reducedModelFormulaStr = "~num_genes_expressed",cores=5)
 
 #saveRDS(PV_vs_Magno_res, file="PV_vs_Magno_res.rds")
 
+###################################################################################################
+######### load from here 
+###################################################################################################
 
 dat<-readRDS("../data/filtered10kOxy.rds")
+pData(dat)$CellType<-"Magnocellular"
+pData(dat)$CellType[pData(dat)$Cluster==1]<-"Parvocellular"
 PV_vs_Magno_res<-readRDS("PV_vs_Magno_res.rds")
+nCellCutoff<-5
+expressed_genes<-rownames(fData(dat))[fData(dat)$num_cells_expressed>=nCellCutoff]
 
-
-qval_cutoff<-0.0000001
-#qval_cutoff<-0.01
+#qval_cutoff<-0.0000001
+qval_cutoff<-0.001
 PV_vs_Magno_sigGeneIDs<-PV_vs_Magno_res$gene_id[PV_vs_Magno_res$qval<=qval_cutoff]
 length(PV_vs_Magno_sigGeneIDs)
 
-pdf("plots/sigGenes_heatmap_q_lt_0.0000001.pdf",width=10,height=10)
+PMcolors<-c("orangered","darkcyan")
+genes2plot <- dat[row.names(subset(fData(dat), gene_short_name %in% c("Cckar", "Gabra2"))),]
+
+pdf("../plots/Keri_genes.pdf",width=10,height=10,fonts="Helvetica")
+grid.arrange(
+  plot_cell_clusters(dat,markers=c("Cckar", "Gabra2")) + 
+    scale_color_viridis(option="viridis") + scale_size_area(max_size = 6),
+  monocle::plot_genes_violin(genes2plot, grouping="CellType", ncol=2, min_expr=0.1,
+    color_by="CellType",panel_order=c("Cckar", "Gabra2")) +
+    scale_fill_manual(values=PMcolors) + theme(legend.position = "top")
+,nrow=2)
+dev.off()
+
+
+by(pData(dat)$CellType,pData(dat)$Fluorogold, table)
+
+
+myPHeatmap<-function(cds,geneset,logMode=TRUE){
+  sub<-cds[lookupGeneId(cds,geneset),]
+  mat<-as.matrix(exprs(sub))
+  if(logMode){
+    mat<-log10(mat+1)
+  }
+  pheatmap(mat=log10(as.matrix(exprs(sub))+1),
+            scale="row",
+            labels_row=fData(sub)$gene_short_name,
+            annotation_col=pData(sub)[,c("source_plate","Total_mRNAs","num_genes_expressed","Cluster","Fluorogold")],
+            labelsCol=FALSE,  
+            color = colorRampPalette(rev(brewer.pal(n = 11, name ="PRGn")))(100),
+            clustering_distance_cols = "correlation",
+            clustering_distance_rows = "correlation",
+             show_rownames = T, show_colnames = F,
+             cutree_rows=2, cutree_cols=2, breaks=seq(-3,3,length=101))
+}
+
+myPHeatmap(dat,PV_vs_Magno_sigGeneIDs,logMode=TRUE)
+
+pdf("../plots/sigGenes_heatmap_1percent_FDR.pdf",width=10,height=10)
 print(myPHeatmap(dat,PV_vs_Magno_sigGeneIDs,logMode=TRUE))
 dev.off()
 
-pdf("plots/top_stringent_DE_genes_Magno_vs_Parvo.pdf",width=20,height=20)
+
+pdf(paste0("../plots/sigGenes_violinplots_qval",qval_cutoff,".pdf"),width=20,height=20)
+monocle::plot_genes_violin(genes2plot, grouping="CellType", ncol=4, min_expr=0.1,color_by ="CellType")
+dev.off()
+
+pdf("../plots/top_stringent_DE_genes_Magno_vs_Parvo.pdf",width=20,height=20)
 plot_cell_clusters(dat,markers=lookupGeneName(dat,PV_vs_Magno_sigGeneIDs),ncol=6) + scale_color_viridis(option="viridis")
 dev.off()
 
-#plot_cell_clusters(dat,markers=lookupGeneName(dat,sample(PV_vs_Magno_sigGeneIDs,12)))
-
-qval_cutoff<-0.01
-PV_vs_Magno_sigGeneIDs<-PV_vs_Magno_res$gene_id[PV_vs_Magno_res$qval<=qval_cutoff]
-length(PV_vs_Magno_sigGeneIDs)
-
-pdf("plots/sigGenes_heatmap_10percent_FDR.pdf",width=10,height=10)
-print(myPHeatmap(dat,PV_vs_Magno_sigGeneIDs,logMode=TRUE))
-dev.off()
-
-pdf(file="plots/genes4Ale.pdf")
+pdf(file="../plots/genes4Ale.pdf")
 plot_cell_clusters(dat,markers=c("Reln", "Cartpt", "Calb1", "Oxt"))
 dev.off()
 
+pdf(file="../plots/FMR1.pdf")
+plot_cell_clusters(dat,markers=c("Fmr1","Reln"))
+dev.off()
+
+
+plot_cell_clusters(dat,markers=c("Slc17a6", "Slc17a7"))
+
+
+#by(exprs(dat),pData(dat)$CellType,mean)
+
 
 plot_cell_clusters(dat,markers=c("Scng","Kcnmb4","Calb1","Nxph4","Scn3b","Cdh6","Cplx1","Gap43","Cartpt","Gabrq","Penk","Cacng3"))
-
 plot_cell_clusters(dat,markers=c("Ndrg2","Aldoc","Apoe","Sparc","Atp1a2","Sparcl1","Dbi","Mt1","Gsn","Mbp","Hbb−bs","Hba−a1","Cnp","Lars2","Serpine2","Cd9"))
-
 plot_cell_clusters(dat,markers=c("C2cd5","Ptprz1","S100a1","Kank1","Gpr37l1","Ppap2b","Gja1","Serpine2","Atp1b2","Fxyd1","Gsn","Cmtm5","Pla2g7","Htra1","Slc1a3","Agt","Ttyh1","Bcan","Mmd2","Lars2","Gm15564","Dbi","Ndrg2","Aldoc","Ntsr2","Atp1a2","Sparcl1","Sepp1","Apoe","Sparc","Plekhb1","Ddr1","Sept4","Sirt2","Josd2","Ptn","Scd2","Gpm6b","Ctss","Mbp","Hbb−bs","Hba−a1","Cnp","Mag","Plp1","Trf","Mal","Cldn11","Mobp","Hba−a2","Cryab","Hbb−bt","Mog","Cd9"))
 plot_cell_clusters(dat,markers=c("Sox5","Car10","C230004F18Rik","Nxph4","Cbln4","Cpne6","Me3","Igsf21","Reln","Brinp1","Scn3b"))
 
 pdf("KChannels.pdf",width=40,height=40)
 plot_cell_clusters(dat,markers=KChannels)
 dev.off()
+
+
+agt<-fData(dat)$gene_short_name[grep("Agt",fData(dat)$gene_short_name)]
+pdf("../plots/angiotensin.pdf",width=10,height=10)
+plot_cell_clusters(dat,markers=agt)
+dev.off()
+
 
 plot_cell_clusters(dat,markers=c("Sst")) + coord_equal(1)
 
@@ -299,25 +382,50 @@ plot_cell_clusters(dat,markers=c("Sst")) + coord_equal(1)
 # By Cluster (currently this is the same as by CellType unless we revisit cluster k)
 Cluster_res<-differentialGeneTest(dat[expressed_genes,],fullModelFormulaStr = "~num_genes_expressed+Cluster",reducedModelFormulaStr = "~num_genes_expressed",cores=6)
 
-qval_cutoff<-0.01
+#Cluster_res[which(Cluster_res$gene_short_name %in% c("Calb1","Reln","Cnr1","Kcnmb4")),]
+#Cluster_res[which(Cluster_res$gene_short_name %in% c("Reln","Cnr1","Med13l","Nrxn3","Tanc2","Slc6a","Stxbp1")),c("pval","gene_short_name")]
+
+qval_cutoff<-0.001
 Cluster_sigGeneIDs<-Cluster_res$gene_id[Cluster_res$qval<=qval_cutoff]
 length(Cluster_sigGeneIDs)
 
-plot_cell_clusters(dat,markers=sample(lookupGeneName(dat,Cluster_sigGeneIDs),12))
+magExp<-apply(exprs(dat)[Cluster_sigGeneIDs,pData(dat)$CellType=="Magnocellular"],1,mean)
+pavExp<-apply(exprs(dat)[Cluster_sigGeneIDs,pData(dat)$CellType=="Parvocellular"],1,mean)
 
+delta<-magExp-pavExp
+CT<-ifelse(delta<0,"Parvo","Magno")
+
+SupTable1<-cbind(Cluster_res[Cluster_res$qval<=qval_cutoff,],CT)
+write.csv(SupTable1, file=paste0("Significantly_DE_genes_qval",qval_cutoff,".csv"))
+
+
+
+pdf(file="../plots/sigGeneIDs.pdf")
+plot_cell_clusters(dat,markers=sample(lookupGeneName(dat,Cluster_sigGeneIDs),12))
+dev.off()
 ```
 
 ```{r}
 #hypergeometric test for enrichment of Autism-associated genes in significant DE list
-ASDRiskGenes<-readxl::read_excel("../annotations/ASDRiskGenes.xlsx",sheet="FMRP ASD Risk Genes",skip=1)
-ASDRiskGenes
-ASDRiskGenes<-ASDRiskGenes[ASDRiskGenes$Gene %in% lookupGeneName(dat,expressed_genes),]
+#ASDRiskGenes<-readxl::read_excel("../annotations/ASDRiskGenes.xlsx",sheet="FMRP ASD Risk Genes",skip=1)
+#ASDRiskGenes
+#ASDRiskGenes<-ASDRiskGenes[ASDRiskGenes$Gene %in% lookupGeneName(dat,expressed_genes),]
 
-SFARIRiskGenes<-readxl::read_excel("../annotations/ASDRiskGenes.xlsx",sheet="SFARI ASD RISK GENES",skip=2)
-SFARIRiskGenes
-SFARIRiskGenes$mouseGeneName<-tools::toTitleCase(stringr::str_to_lower(SFARIRiskGenes$Gene))
-SFARIRiskGenes<-SFARIRiskGenes[SFARIRiskGenes$mouseGeneName %in% lookupGeneName(dat,expressed_genes),]
+NewASDRiskGenes<-readxl::read_excel("../annotations/ASDRiskGenes_Ale_update_6-5-19.xlsx",sheet="ASD Risk Genes",skip=1)
+NewASDRiskGenes$Gene<-tools::toTitleCase(stringr::str_to_lower(NewASDRiskGenes$Gene))
+NewASDRiskGenes
+NewASDRiskGenes<-NewASDRiskGenes[NewASDRiskGenes$Gene %in% lookupGeneName(dat,expressed_genes),]
+categoryCutoff<-4
+NewASDRiskGenes<-NewASDRiskGenes[NewASDRiskGenes$Category<=categoryCutoff,]
 
+#SFARIRiskGenes<-readxl::read_excel("../annotations/ASDRiskGenes.xlsx",sheet="SFARI ASD RISK GENES",skip=2)
+#SFARIRiskGenes
+#SFARIRiskGenes$mouseGeneName<-tools::toTitleCase(stringr::str_to_lower(SFARIRiskGenes$Gene))
+#SFARIRiskGenes<-SFARIRiskGenes[SFARIRiskGenes$mouseGeneName %in% lookupGeneName(dat,expressed_genes),]
+
+FMRPgenes<-readxl::read_excel("../annotations/FMRP binding partners Darnell.xlsx")
+FMRPgenes
+FMRPgenes<-FMRPgenes[FMRPgenes$'gene symbol' %in% lookupGeneName(dat,expressed_genes),]
 
 #use homologene for SFARIR
 human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
@@ -331,43 +439,98 @@ indx<-match(SFARIRiskGenes$Gene,map$HGNC.symbol )
 SFARIRiskGenes$Gene[1]; map$HGNC.symbol[indx[1]]
 indx<-indx[!is.na(indx)]
 map<-map[indx,]             
-
 map<-map[map$MGI.symbol %in% lookupGeneName(dat,expressed_genes),]
 
 #ASDRisk
-GeneSetToTest<-ASDRiskGenes$Gene
+#GeneSetToTest<-ASDRiskGenes$Gene
+#k<-length(PV_vs_Magno_sigGeneIDs)
+#n<-length(expressed_genes)-length(GeneSetToTest)
+#m<-length(GeneSetToTest)
+#q<-length(intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)))
+#phyper(q,m,n,k, lower.tail=FALSE)
+
+#ASDRisk
+GeneSetToTest<-NewASDRiskGenes$Gene
 k<-length(PV_vs_Magno_sigGeneIDs)
 n<-length(expressed_genes)-length(GeneSetToTest)
 m<-length(GeneSetToTest)
 q<-length(intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)))
 
 phyper(q,m,n,k, lower.tail=FALSE)
+
 
 #SFARI
-GeneSetToTest<-SFARIRiskGenes$mouseGeneName
-k<-length(PV_vs_Magno_sigGeneIDs)
-n<-length(expressed_genes)-length(GeneSetToTest)
-m<-length(GeneSetToTest)
-q<-length(intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)))
-
-phyper(q,m,n,k, lower.tail=FALSE)
+#GeneSetToTest<-SFARIRiskGenes$mouseGeneName
+#k<-length(PV_vs_Magno_sigGeneIDs)
+#n<-length(expressed_genes)-length(GeneSetToTest)
+#m<-length(GeneSetToTest)
+#q<-length(intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)))
+#phyper(q,m,n,k, lower.tail=FALSE)
 
 #SFARI
-GeneSetToTest<-map$MGI.symbol
+#GeneSetToTest<-map$MGI.symbol
+#k<-length(PV_vs_Magno_sigGeneIDs)
+#n<-length(expressed_genes)-length(GeneSetToTest)
+#m<-length(GeneSetToTest)
+#q<-length(intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)))
+#phyper(q,m,n,k, lower.tail=FALSE)
+
+#SFARI
+#GeneSetToTest<-FMRPgenes$'gene symbol'
+#k<-length(PV_vs_Magno_sigGeneIDs)
+#n<-length(expressed_genes)-length(GeneSetToTest)
+#m<-length(GeneSetToTest)
+#q<-length(intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)))
+#phyper(q,m,n,k, lower.tail=FALSE)
+
+#FMRP
+GeneSetToTest<-FMRPgenes$Gene
 k<-length(PV_vs_Magno_sigGeneIDs)
 n<-length(expressed_genes)-length(GeneSetToTest)
 m<-length(GeneSetToTest)
 q<-length(intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)))
-
 phyper(q,m,n,k, lower.tail=FALSE)
 
+# Intersection
+GeneSetToTest<-intersect(FMRPgenes$Gene, NewASDRiskGenes$Gene)
+k<-length(PV_vs_Magno_sigGeneIDs)
+n<-length(expressed_genes)-length(GeneSetToTest)
+m<-length(GeneSetToTest)
+q<-length(intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)))
+phyper(q,m,n,k, lower.tail=FALSE)
+
+
+
+#GeneSetToTest<-c(FMRPgenes$'gene symbol',map$MGI.symbol, SFARIRiskGenes$mouseGeneName, ASDRiskGenes$Gene) 
+GeneSetToTest<-c(FMRPgenes$'gene symbol', SFARIRiskGenes$mouseGeneName)
+qval_cutoff<-.1
+PV_vs_Magno_sigGeneIDs<-PV_vs_Magno_res$gene_id[PV_vs_Magno_res$qval<=qval_cutoff]
+intersect(intersect(FMRPgenes$'gene symbol', SFARIRiskGenes$mouseGeneName),lookupGeneName(dat,PV_vs_Magno_sigGeneIDs))
+indx<-intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs))
+
+magExp<-apply(exprs(dat)[match(indx,fData(dat)$gene_short_name),pData(dat)$CellType=="Magnocellular"],1,mean)
+pavExp<-apply(exprs(dat)[match(indx,fData(dat)$gene_short_name),pData(dat)$CellType=="Parvocellular"],1,mean)
+delta<-magExp-pavExp
+CT<-ifelse(delta<0,"Parvo","Magno")
+names(CT)<-indx
+
+SupTable2<-cbind(Cluster_res[match(indx,Cluster_res$gene_short_name),],CT)
+
+write.csv(SupTable2, file=paste0("USEME_419_Significantly_DE_ASD&FMRPgenes_qval",qval_cutoff,".csv"))
 
 
 ```
 
+
+
 ```{r}
-pdf("plots/significantly_DE_ASD_Risk_genes.pdf",width=10,height=10)
+pdf("../plots/significantly_DE_ASD_Risk_genes.pdf",width=10,height=10)
 plot_cell_clusters(dat,markers=intersect(GeneSetToTest,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs))) + scale_color_viridis(option="viridis")
+dev.off()
+
+
+pdf("../plots/significantly_DE_ASD_Risk_genes_all.pdf",width=10,height=10)
+plot_cell_clusters(dat,markers=intersect(c(ASDRiskGenes$Gene,map$MGI.symbol),lookupGeneName(dat,PV_vs_Magno_sigGeneIDs))) + scale_color_viridis(option="viridis")
 dev.off()
 
 ```
@@ -381,28 +544,185 @@ fData(dat)$logfc<-log2(fData(dat)$Magno_mean_cpc/fData(dat)$Parvo_mean_cpc)
 
 fData(dat[lookupGeneId(dat,intersect(ASDRiskGenes$Gene,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs))),])$logfc
 fData(dat[lookupGeneId(dat,intersect(map$MGI.symbol,lookupGeneName(dat,PV_vs_Magno_sigGeneIDs))),])$logfc
+fData(dat[lookupGeneId(dat,intersect(FMRPgenes$'gene symbol',lookupGeneName(dat,PV_vs_Magno_sigGeneIDs))),])$logfc
 
-fData(dat)$ASDRiskGene<-fData(dat)$gene_short_name %in% ASDRiskGenes$Gene
-#fData(dat)$SFARIRiskGene<-fData(dat)$gene_short_name %in% SFARIRiskGenes$mouseGeneName
+
+fData(dat)$ASDRiskGene<-fData(dat)$gene_short_name %in% intersect(FMRPgenes$'gene symbol', map$MGI.symbol)
+fData(dat)$SFARIRiskGene<-fData(dat)$gene_short_name %in% SFARIRiskGenes$mouseGeneName
 fData(dat)$SFARIRiskGene<-fData(dat)$gene_short_name %in% map$MGI.symbol
+fData(dat)$FMRPgenes<-fData(dat)$gene_short_name %in% FMRPgenes$'gene symbol'
 fData(dat)$isSignificant<-fData(dat)$gene_short_name %in% lookupGeneName(dat,PV_vs_Magno_sigGeneIDs)
+
+FMRPgenes$'gene symbol'
+
+#remove genes with logfc == Inf
+fData(dat)<-fData(dat)[-which(fData(dat)$logfc==Inf),]
+
+r<-fData(dat)[fData(dat)$FMRPgenes & fData(dat)$SFARIRiskGene,]
+f<-fData(dat)[fData(dat)$ASDRiskGene & fData(dat)$SFARIRiskGene,]
+
+match(r$gene_short_name,f$gene_short_name)
+
+
+dim(fData(dat)[fData(dat)$SFARIRiskGene & fData(dat)$isSignificant,])
+
+fData(dat)[fData(dat)$FMRPgenes & fData(dat)$isSignificant,"logfc"]
+
+sum(fData(dat)[fData(dat)$FMRPgenes & fData(dat)$isSignificant,"logfc"]>0)
+
+indx<-fData(dat)[fData(dat)$SFARIRiskGene & fData(dat)$isSignificant,"gene_short_name"]
+# order genes for overlaps 
+indx<-c("Stxbp1","Slc6a1","Reln","Cnr1","Tanc2","Cib2","Zbtb20")
+pdf("../plots/significantly_DE_ASD_Risk_genes.pdf",width=10,height=10)
+plot_cell_clusters(dat,markers=indx) + scale_color_viridis(option="viridis")
+dev.off()
+
+
+c("Stxbp1","Slc6a1","Reln","Cnr1","Tanc2","Cib2","Zbtb20")
+
+fData(dat)[fData(dat)$ASDRiskGene & fData(dat)$isSignificant,"gene_short_name"]
+
+
+
+GeneSetToTest
+ASDRiskGenes$Gene
+
+# use these genes c("Calb1","Reln","Cnr1","Kcnmb4")
+
+genes2plot <- dat[row.names(subset(fData(dat), gene_short_name %in% c("Calb1","Reln","Cnr1","Kcnmb4"))),]#,"Tanc2","Cib2","Zbtb20"))),]
+pdf(paste0("../plots/significantly_DE_ASD_Risk_violinplots_qval",qval_cutoff,".pdf"),width=8,height=10)
+monocle::plot_genes_violin(genes2plot, grouping="CellType", ncol=4, min_expr=0.1,color_by="CellType")
+dev.off()
+
+pdf(paste0("../plots/significantly_DE_ASD_Risk_violinplots_qval",qval_cutoff,".pdf"),width=20,height=20)
+monocle::plot_genes_violin(genes2plot, grouping="CellType", ncol=4, min_expr=0.1,color_by ="CellType")
+dev.off()
+
+
+
+
+
+fData(dat)$isSignificant,]
+
+
 
 p<-ggplot(fData(dat[expressed_genes,])) +
   geom_density(aes(x=logfc),alpha=0,color="black") + 
   #geom_jitter(aes(x=logfc,y=0.3),height=0.02,color="blue",data=fData(dat)[fData(dat)$ASDRiskGene,]) + 
-  geom_density(aes(x=logfc),color="blue",fill="blue",alpha=0.3,data=fData(dat)[fData(dat)$ASDRiskGene,]) + 
+  geom_density(aes(x=logfc),color="orange",fill="orange",alpha=0.3,data=fData(dat)[fData(dat)$ASDRiskGene,]) + 
+  #geom_rug(aes(x=logfc),color="orange",fill="orange",alpha=0.3,data=fData(dat)[fData(dat)$ASDRiskGene,]) + 
+
+  #geom_text_repel(aes(x=logfc,y=0,label=gene_short_name),color="black",data=fData(dat)[fData(dat)$ASDRiskGene,]) + 
   #geom_jitter(aes(x=logfc,y=0.1),height=0.02,color="red",data=fData(dat)[fData(dat)$ASDRiskGene & fData(dat)$isSignificant,]) + 
   geom_density(aes(x=logfc),color="red",fill="red",alpha=0.3,data=fData(dat)[fData(dat)$ASDRiskGene & fData(dat)$isSignificant,]) + 
+  geom_density(aes(x=logfc),color="cyan",fill="cyan",alpha=0.3,data=fData(dat)[fData(dat)$FMRPgenes,]) + 
+  geom_density(aes(x=logfc),color="blue",fill="blue",alpha=0.3,data=fData(dat)[fData(dat)$FMRPgenes & fData(dat)$isSignificant,]) + 
   #geom_jitter(aes(x=logfc,y=0.3),height=0.02,color="green",data=fData(dat)[fData(dat)$SFARIRiskGene,]) + 
   geom_density(aes(x=logfc),color="green",fill="green",alpha=0.3,data=fData(dat)[fData(dat)$SFARIRiskGene,]) + 
   #geom_jitter(aes(x=logfc,y=0.1),height=0.02,color="red",data=fData(dat)[fData(dat)$SFARIRiskGene & fData(dat)$isSignificant,]) + 
-  #geom_density(aes(x=logfc),color="orange",fill="orange",alpha=0.3,data=fData(dat)[fData(dat)$SFARIRiskGene & fData(dat)$isSignificant,]) + 
+  geom_density(aes(x=logfc),color="purple",fill="purple",alpha=0.3,data=fData(dat)[fData(dat)$SFARIRiskGene & fData(dat)$isSignificant,]) + 
+  
+  geom_point(aes(x=logfc,y=0),color="red",data=fData(dat)[fData(dat)$ASDRiskGene & fData(dat)$isSignificant,]) + 
+  geom_label_repel(aes(x=logfc,y=0,label=gene_short_name),color="black",data=fData(dat)[fData(dat)$ASDRiskGene & fData(dat)$isSignificant,]) + 
+
+  geom_rug(aes(x=logfc),color="orange",fill="orange",alpha=0.3,data=fData(dat)[fData(dat)$ASDRiskGene,]) + 
+  geom_rug(aes(x=logfc),color="cyan",fill="cyan",alpha=0.3,data=fData(dat)[fData(dat)$FMRPgenes,]) +
+
   xlim(-10,10)+
   geom_vline(aes(xintercept=0),linetype="dashed") +
   monocle:::monocle_theme_opts()
 p
 
-pdf("plots/logfc_distribution_by_gene_set.pdf",width=5,height=5)
+pdf("../plots/logfc_distribution_by_genessets.pdf",width=5,height=5)
+p
+dev.off()
+
+Data(dat)[fData(dat)$FMRPgenes & fData(dat)$isSignificant,],binwidth=.5)
+
+p<-ggplot(fData(dat[expressed_genes,])) +
+  geom_density(aes(x=logfc),alpha=0,color="black") + 
+  geom_density(aes(x=logfc),color="orange",fill="orange",alpha=0.3,data=fData(dat)[fData(dat)$ASDRiskGene,]) + 
+  geom_density(aes(x=logfc),color="red",fill="red",alpha=0.3,data=fData(dat)[fData(dat)$ASDRiskGene & fData(dat)$isSignificant,]) +
+  geom_vline(aes(xintercept=0),linetype="dashed") +
+  xlim(-10,10)+ ggtitle("Density of FMRP-ASD Risk Genes") +
+  monocle:::monocle_theme_opts()
+p
+
+pdf("../plots/logfc_distribution_by_FMRP-ASDRiskGene.pdf",width=5,height=5)
+p
+dev.off()
+
+p<-ggplot(fData(dat[expressed_genes,])) +
+  #geom_histogram(aes(x=logfc),alpha=0,color="black") +
+  geom_histogram(aes(x=logfc,y=..density..),color="cyan",fill="cyan",alpha=0.3,data=fData(dat)[fData(dat)$FMRPgenes,]) + 
+  geom_histogram(aes(x=logfc,y=..density..),color="blue",fill="blue",alpha=0.3,data=fData(dat)[fData(dat)$FMRPgenes & fData(dat)$isSignificant,],binwidth=.5) + 
+   xlim(-10,10)+  ggtitle("Density of FMRP Genes") +
+  geom_vline(aes(xintercept=0),linetype="dashed") +
+  monocle:::monocle_theme_opts()
+p
+
+pdf("../plots/logfc_distribution_by_FMRP.pdf",width=5,height=5)
+p
+dev.off()
+
+p<-ggplot(fData(dat[expressed_genes,])) +
+  geom_density(aes(x=logfc),alpha=0,color="black") +
+  geom_density(aes(x=logfc),color="cyan",fill="cyan",alpha=0.3,data=fData(dat)[fData(dat)$FMRPgenes,]) + 
+  geom_density(aes(x=logfc),color="blue",fill="blue",alpha=0.3,data=fData(dat)[fData(dat)$FMRPgenes & fData(dat)$isSignificant,]) + 
+  #geom_jitter(aes(x=logfc,y=0.3),height=0.02,color="green",data=fData(dat)[fData(dat)$SFARIRiskGene,]) + 
+  geom_density(aes(x=logfc),color="green",fill="green",alpha=0.3,data=fData(dat)[fData(dat)$SFARIRiskGene,]) + 
+  #geom_jitter(aes(x=logfc,y=0.1),height=0.02,color="red",data=fData(dat)[fData(dat)$SFARIRiskGene & fData(dat)$isSignificant,]) + 
+  geom_density(aes(x=logfc),color="purple",fill="purple",alpha=0.3,data=fData(dat)[fData(dat)$SFARIRiskGene & fData(dat)$isSignificant,]) + 
+  xlim(-10,10)+
+  geom_vline(aes(xintercept=0),linetype="dashed") +
+  monocle:::monocle_theme_opts()
+p
+
+pdf("../plots/logfc_distribution_by_genessets.pdf",width=5,height=5)
+p
+dev.off()
+
+```
+
+# mitochondrial analysis 
+```{r}
+
+mito_genes<-fData(dat)$gene_id[grepl("^mt-",fData(dat)$gene_short_name)]
+pData(dat)$mt_reads <- Matrix::colSums(exprs(dat)[mito_genes,])
+pData(dat)$total_reads  <- Matrix::colSums(exprs(dat))
+pData(dat)$mito_ratio <- pData(dat)$mt_reads/pData(dat)$total_reads
+mito_summary <- pData(dat)%>%
+  group_by(CellType) %>%
+  summarise(mean=mean(mito_ratio),sd=sd(mito_ratio),se=sd/sqrt(n()))
+
+pdf("../plots/mito_ratio_barplot.pdf",width=5,height=10)
+p<-ggplot(mito_summary) + 
+  geom_bar(aes(y=mean,fill=CellType,x=CellType),stat="identity",position="dodge") + 
+  geom_errorbar(aes(y=mean,x=CellType,color=CellType,ymin=mean-se,ymax=mean+se),color="black",width=.75,position="dodge") + 
+  #geom_boxplot(aes(x=CellType,y=mito_ratio,fill=CellType),notch=FALSE) +
+  geom_point(aes(x=CellType,y=mito_ratio,color=Fluorogold),data=pData(dat),position = "jitter") +
+  scale_fill_manual(values=c("steelblue","red")) +
+  scale_y_continuous(breaks = seq(0, 0.3, by = 0.025)) + 
+  scale_color_manual(values=label_colors) +
+  #ylim(c(0,0.15)) +
+  ylab("Mitochondrial Ratio") + 
+  monocle:::monocle_theme_opts()
+p
+dev.off()
+
+mito_summary <- pData(dat)%>%
+  group_by(CellType,source_plate) %>%
+  summarise(mean=mean(mito_ratio),sd=sd(mito_ratio),se=sd/sqrt(n()))
+
+pdf("../plots/mito_ratio_boxplots_by_plate.pdf",width=5,height=5)
+p<-ggplot(pData(dat)) + 
+  #geom_bar(aes(y=mean,fill=CellType,x=source_plate),position="dodge",stat="identity") + 
+  #geom_boxplot(aes(y=mean,x=source_plate,fill=CellType,color=CellType,ymin=mean-se,ymax=mean+se),position="dodge",width=.75) + 
+  geom_boxplot(aes(x=source_plate,y=mito_ratio,fill=CellType),notch=FALSE) +
+  scale_fill_manual(values=c("steelblue","red")) +
+  scale_color_manual(values=c("steelblue","red")) +
+  ylab("Mitochondrial Ratio") + 
+  monocle:::monocle_theme_opts()
 p
 dev.off()
 
